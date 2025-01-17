@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grid 32x32/16x16 lite</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #121212;
+            margin: 0;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(var(--grid-size), 1fr);
+            grid-gap: 2px;
+            width: 80vmin;
+            height: 80vmin;
+            position: relative;
+        }
+        .cell {
+            background-color: #333;
+            width: 100%;
+            padding-top: 100%;
+            position: relative;
+            cursor: pointer;
+        }
+        .cell::after {
+            content: "";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        .player {
+            position: absolute;
+            width: calc(100% / var(--grid-size) - 2px);
+            height: calc(100% / var(--grid-size) - 2px);
+            background-color: #FFA500;
+            z-index: 10;
+        }
+        .controls, .move-controls, .move-controlsr {
+            margin: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+          border: dotted orange;
+        }
+        .button, .move-button, select, .input-field {
+            background-color: #444;
+            color: white;
+            border: none;
+            padding: 10px;
+            margin: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .button:hover, .move-button:hover, select:hover {
+            background-color: #555;
+        }
+        .creator-controls {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <button class="button" onclick="setGridSize(32)">32x32</button>
+        <button class="button" onclick="setGridSize(16)">16x16</button>
+        <label>
+            <input type="checkbox" id="creatorModeToggle" onclick="toggleCreatorMode()">Creator Mode
+        </label>
+        <div class="creator-controls" id="creatorControls">
+            <select id="objectSelector"></select>
+            <button class="button" onclick="copyLevel()">Copy Lvl</button>
+            <input class="input-field" id="levelData" placeholder="Paste level data here">
+            <button class="button" onclick="loadLevel()">Load Lvl</button>
+        </div>
+        <div class="move-controls" id="moveControls" style="display: none;">
+            <div class="row">
+                <button class="move-button" onclick="handleMovement({ key: 'ArrowLeft' })">←</button>
+                <button class="move-button" onclick="handleMovement({ key: 'ArrowRight' })"> → </button>
+            </div>
+        </div>
+        <button class="button" onclick="startGame()">Strt Game</button>
+    </div>
+    <div class="container" id="gridContainer" style="--grid-size: 32;"></div>
+    <div class="move-controlsr" id="moveControlsr" style="display: none;">
+        <div class="row">
+            <button class="move-button" onclick="handleMovement({ key: 'ArrowUp' })">↑↑↑</button>
+        </div>
+        <button class="move-button" onclick="handleMovement({ key: 'ArrowDown' })">↓↓↓</button>
+    </div>
+
+    <script>
+        const colors = {
+            0: '#333', 1: '#757575', 2: '#800000', 3: '#FFD700', 4: '#FFA500', 
+            5: '#07b007', 6: '#9400D3', 7: '#ADD8E6'
+        };
+
+        const objects = [
+            { value: 0, text: '[0] void (none)' },
+            { value: 1, text: '[1] Wall (Dark Grey)' },
+            { value: 2, text: '[2] Lava (Dark Red)' },
+            { value: 3, text: '[3] Finish (Yellow)' },
+            { value: 4, text: '[4] Player (Orange)' },
+            { value: 5, text: '[5] Spring (Green-Yellow)' },
+            { value: 6, text: '[6] Teleport (Purple)' },
+            { value: 7, text: '[7] Ice (Light Blue)' }
+        ];
+
+        let creatorMode = false;
+        let selectedObject = 1;
+        let gridSize = 16;
+        let levelData = [];
+        let playerPosition = { x: 0, y: 0 };
+        let playerElement = null;//!!!!!!!!null
+        let gameStarted = false;
+
+        const objectSelector = document.getElementById('objectSelector');
+        objects.forEach(obj => {
+            const option = document.createElement('option');
+            option.value = obj.value;
+            option.textContent = obj.text;
+            objectSelector.appendChild(option);
+        });
+
+        objectSelector.addEventListener('change', function() {
+            selectedObject = parseInt(this.value);
+        });
+
+        function createGrid(size) {
+            gridSize = size;
+            const container = document.getElementById('gridContainer');
+            container.style.setProperty('--grid-size', size);
+            container.innerHTML = '';
+            levelData = Array(size * size).fill(0);
+            for (let i = 0; i < size * size; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.addEventListener('click', () => placeObject(cell, i));
+                container.appendChild(cell);
+            }
+        }
+
+        function setGridSize(size) {
+            createGrid(size);
+        }
+
+        function toggleCreatorMode() {
+            creatorMode = document.getElementById('creatorModeToggle').checked;
+            document.getElementById('creatorControls').style.display = creatorMode ? 'block' : 'none';
+        }
+
+        function placeObject(cell, index) {
+            if (!creatorMode) return;
+            cell.style.backgroundColor = colors[selectedObject];
+            levelData[index] = selectedObject;
+            if (selectedObject === 4) {
+                playerPosition = { x: index % gridSize, y: Math.floor(index / gridSize) };
+            }
+        }
+
+        function copyLevel() {
+            const levelString = JSON.stringify(levelData);
+            navigator.clipboard.writeText(levelString).then(() => alert("Level data copied to clipboard!"));
+        }
+
+        function loadLevel() {
+            const levelString = document.getElementById('levelData').value;
+            levelData = JSON.parse(levelString);
+            const cells = document.getElementById('gridContainer').children;
+            for (let i = 0; i < levelData.length; i++) {
+                cells[i].style.backgroundColor = colors[levelData[i]];
+                if (levelData[i] === 4) {
+                    playerPosition = { x: i % gridSize, y: Math.floor(i / gridSize) };
+                }
+            }
+            const controls = levelData[0] === 2 ? 'flex' : 'none';
+            document.getElementById('moveControls').style.display = controls;
+            document.getElementById('moveControlsr').style.display = controls;
+            if (controls === 'flex') enableSwipeControls();
+        }
+
+        function startGame() {
+            if (playerElement) playerElement.remove();
+            playerElement = document.createElement('div');
+            playerElement.classList.add('player');
+            playerElement.style.left = playerPosition.x * (100 / gridSize) + '%';
+            playerElement.style.top = playerPosition.y * (100 / gridSize) + '%';
+            document.getElementById('gridContainer').appendChild(playerElement);
+            gameStarted = true;
+            window.addEventListener('keydown', handleMovement);
+            applyGravity();
+        }
+
+        function handleMovement(event) {
+            if (!gameStarted) return;
+            let newX = playerPosition.x;
+            let newY = playerPosition.y;
+            switch (event.key) {
+                case 'ArrowUp': newY = Math.max(0, newY - 1); break;
+                case 'ArrowDown': newY = Math.min(gridSize - 1, newY + 1); break;
+                case 'ArrowLeft': newX = Math.max(0, newX - 1); break;
+                case 'ArrowRight': newX = Math.min(gridSize - 1, newX + 1); break;
+                default: return;
+            }
+            movePlayer(newX, newY);
+        }
+
+        function movePlayer(newX, newY) {
+            const newIndex = newY * gridSize + newX;
+            const cellType = levelData[newIndex];
+            if (cellType === 1) return; // Wall
+            if (cellType === 2) { // Lava
+                alert("Game Over! You fell into lava.");
+                window.removeEventListener('keydown', handleMovement);
+                return;
+            } else if (cellType === 3) { // Finish
+                alert("Congratulations! You've reached the finish.");
+                window.removeEventListener('keydown', handleMovement);
+                return;
+            } else if (cellType === 5) { // Spring
+                newY = Math.max(0, newY - 3);
+            } else if (cellType === 6) { // Teleport
+                const teleportCells = levelData.reduce((acc, val, idx) => (val === 6 ? acc.concat(idx) : acc), []);
+                const otherTeleports = teleportCells.filter(idx => idx !== newIndex);
+                if (otherTeleports.length > 0) {
+                    const randomTeleport = otherTeleports[Math.floor(Math.random() * otherTeleports.length)];
+                    newX = randomTeleport % gridSize;
+                    newY = Math.floor(randomTeleport / gridSize);
+                }
+            } else if (cellType === 7) { // Ice
+                // Slide until hit wall or non-ice
+                while (newX < gridSize - 1 && levelData[newY * gridSize + newX + 1] === 7) {
+                    newX++;
+                }
+            }
+            playerPosition = { x: newX, y: newY };
+            playerElement.style.left = newX * (100 / gridSize) + '%';
+            playerElement.style.top = newY * (100 / gridSize) + '%';
+        }
+
+        function enableSwipeControls() {
+            let touchstartX = 0;
+            let touchstartY = 0;
+            let touchendX = 0;
+            let touchendY = 0;
+            const container = document.getElementById('gridContainer');
+
+            function handleGesture() {
+                const dx = touchendX - touchstartX;
+                const dy = touchendY - touchstartY;
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    handleMovement({ key: dx > 0 ? 'ArrowRight' : 'ArrowLeft' });
+                } else {
+                    handleMovement({ key: dy > 0 ? 'ArrowDown' : 'ArrowUp' });
+                }
+            }
+
+            container.addEventListener('touchstart', function(event) {
+                touchstartX = event.changedTouches[0].screenX;
+                touchstartY = event.changedTouches[0].screenY;
+            });
+
+            container.addEventListener('touchend', function(event) {
+                touchendX = event.changedTouches[0].screenX;
+                touchendY = event.changedTouches[0].screenY;
+                handleGesture();
+            });
+        }
+
+        function applyGravity() {
+            setInterval(() => {
+                if (!gameStarted) return;
+                const belowY = playerPosition.y + 1;
+                if (belowY < gridSize && levelData[belowY * gridSize + playerPosition.x] === 0) {
+                    movePlayer(playerPosition.x, belowY);
+                }
+            }, 1000);
+        }
+
+        createGrid(16);
+    </script>
+</body>
+</html>
